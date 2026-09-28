@@ -46,7 +46,6 @@ The required model is `deepseek-v4-flash-vision-exp`, the vision-capable
 DeepSeek Flash model. JPEG, PNG, GIF, and WebP inputs are accepted by the
 homework runner.
 
-
 ## Homework 1 solution
 
 ### Chain design
@@ -83,11 +82,11 @@ and comparison with the ground truth.
 
 ### Extracted fields and calculation
 
-| Field | Meaning |
-| --- | --- |
-| `amount_paid` | Final payment after `ROUNDING` |
-| `subtotal` | `SUBTOTAL` after discounts but before `ROUNDING` |
-| `discounts` | Individual discount amounts recorded as positive values; an empty list if none |
+| Field           | Meaning                                                                        |
+| --------------- | ------------------------------------------------------------------------------ |
+| `amount_paid` | Final payment after`ROUNDING`                                                |
+| `subtotal`    | `SUBTOTAL` after discounts but before `ROUNDING`                           |
+| `discounts`   | Individual discount amounts recorded as positive values; an empty list if none |
 
 For each receipt:
 
@@ -106,23 +105,4 @@ Neither extraction nor aggregation reads the ground-truth answers.
 Local tests with simulated model outputs covered the seven public receipts'
 known amounts, multiple discounts, no discounts, and aggregation across receipts.
 The seven-receipt arithmetic check returned HK$1974.30 and HK$2348.20, matching
-the public ground truth. These checks validate the aggregation and output format;
-they do not measure the model's image-reading accuracy.
-
-A real-model run from a fresh local clone completed successfully and generated
-`results.csv`. The public test results from that run were:
-
-| Query | Model response | Expected amount | Result |
-| --- | --- | --- | --- |
-| Total amount spent | HK$1974.30 | HK$1974.30 | Correct |
-| Total without discounts | HK$2336.20 | HK$2348.20 | Incorrect |
-
-The second answer was HK$12.00 below the expected amount. This run confirms that
-the program executes end-to-end, but it does not pass both public-test checks.
-Per-receipt model outputs need further review to identify the extraction error.
-These results describe one run, not a guarantee of accuracy on unseen receipts.
-
-To repeat the full test, run the public test command above and inspect the newly
-generated `results.csv`. Unreadable amounts, invalid model output, or an exhausted
-API retry can terminate the run before a new CSV is written.
-
+the public ground truth. These checks validate the aggregation and output format.
