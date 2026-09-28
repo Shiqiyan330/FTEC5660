@@ -175,7 +175,6 @@ def answer_queries(chain: Any, images: list[Path]) -> dict[str, Any]:
         total_paid += paid
         total_without_discounts += subtotal + discount_total
 
-    # 7. 返回整个文件夹的汇总答案
     return {
         QUERY_1: f"HK${total_paid:.2f}",
         QUERY_2: f"HK${total_without_discounts:.2f}",
