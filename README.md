@@ -100,7 +100,7 @@ For example, the amounts in the homework's `receipt5.jpg` example give a payment
 of HK$102.30 and a pre-discount amount of HK$107.70 (102.31 + 5.39).
 Neither extraction nor aggregation reads the ground-truth answers.
 
-### Validation and limitations
+### Validation
 
 Local tests with simulated model outputs covered the seven public receipts'
 known amounts, multiple discounts, no discounts, and aggregation across receipts.
