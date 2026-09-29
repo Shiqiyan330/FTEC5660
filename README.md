@@ -54,11 +54,15 @@ homework runner.
 flowchart TD
     A[Receipt image paths] --> B
     subgraph R[For each receipt, processed sequentially]
-        B[Encode image as a Base64 data URL] --> C[Fixed extraction instructions and image message]
-        C --> D[ChatDeepSeek: deepseek-v4-flash-vision-exp]
-        D --> E[JsonOutputParser]
-        E --> F[Check fields and convert amounts to float]
-        F --> G[Add this receipt to the two running totals]
+        B[Encode image as a Base64 data URL] --> C[Start verification attempt]
+        C --> D[TOTAL call: read final payment and subtotal]
+        D --> E[Independent ITEMS call: read item amounts, discounts and rounding]
+        E --> F[Validate JSON and calculate with Decimal]
+        F --> J{Both subtotal and final payment match?}
+        J -->|Yes| G[Add verified amounts to running totals]
+        J -->|No or invalid extraction| K{Fewer than 3 retries used?}
+        K -->|Yes| C
+        K -->|No| L[Raise an error without returning final amounts]
     end
     G -->|After all receipts| H[Return one HKD amount for each query]
     H --> I[Provided runner writes results.csv and scores answers]
@@ -66,43 +70,70 @@ flowchart TD
 
 ### Solution description
 
-I separate receipt reading from arithmetic. `build_chain()` creates a LangChain
-pipeline of a prompt template, `deepseek-v4-flash-vision-exp`, and a JSON output
-parser once. `answer_queries()` then sends each receipt as a Base64 image in a
-human message. The model extracts the final payment after rounding, the subtotal
-before rounding, and a list of individual discount amounts. The prompt distinguishes
-the final payment from cash tendered and change, excludes rounding from discounts,
-and asks the model not to count savings summaries twice. Python checks the required
-fields, converts the amounts to `float`, rejects negative amounts, and adds the
-values to two running totals. The first total is the sum of final payments; the
-second is the sum of each subtotal plus that receipt's discounts. The function
-returns the two exact question strings as dictionary keys, with one HKD amount
-formatted to two decimal places per answer. The provided runner handles CSV output
-and comparison with the ground truth.
+I check each receipt using two separate model calls. `build_chain()` creates a
+prompt, the required `deepseek-v4-flash-vision-exp` model, and a JSON output parser.
+The TOTAL call reads the printed final payment and subtotal. The ITEMS call
+independently reads the original item line amounts, discounts and signed rounding
+adjustment; it does not receive the TOTAL response. Python uses `Decimal` to
+calculate the subtotal as item amounts minus discounts, and the final payment as
+that subtotal plus rounding. Both calculated values must exactly match the printed
+values before the receipt is added to the running totals. An invalid extraction
+or mismatch causes both methods to reread that receipt, with one initial attempt
+and at most three retries. A persistent failure raises an error instead of returning
+unverified totals. Once all receipts pass, the function returns the two exact query
+strings with one HKD amount each, and the unchanged runner writes and scores the CSV.
 
 ### Extracted fields and calculation
 
-| Field           | Meaning                                                                        |
-| --------------- | ------------------------------------------------------------------------------ |
-| `amount_paid` | Final payment after`ROUNDING`                                                |
-| `subtotal`    | `SUBTOTAL` after discounts but before `ROUNDING`                           |
-| `discounts`   | Individual discount amounts recorded as positive values; an empty list if none |
+| Method | Field | Meaning |
+| --- | --- | --- |
+| TOTAL | `amount_paid` | Printed final payment after rounding, not cash tendered or change |
+| TOTAL | `subtotal` | Printed subtotal after discounts but before rounding |
+| ITEMS | `item_amounts` | Original positive item line amounts, including bag charges |
+| ITEMS | `discounts` | Individual discounts as positive amounts; empty only if none |
+| ITEMS | `rounding` | Signed rounding adjustment; zero only if no rounding line exists |
 
 For each receipt:
 
 ```text
-amount spent = amount_paid
-amount without discounts = subtotal + sum(discounts)
+before_discount = sum(item_amounts)
+calculated_subtotal = before_discount - sum(discounts)
+calculated_paid = calculated_subtotal + rounding
+
+require subtotal == calculated_subtotal
+require amount_paid == calculated_paid
+
+query 1 += amount_paid
+query 2 += before_discount
 ```
 
-The discount sum is recalculated for each receipt. `ROUNDING` is not added back.
-For example, the amounts in the homework's `receipt5.jpg` example give a payment
-of HK$102.30 and a pre-discount amount of HK$107.70 (102.31 + 5.39).
-Neither extraction nor aggregation reads the ground-truth answers.
+After validation, `before_discount` is equal to `subtotal + sum(discounts)`,
+as required by the homework. Rounding is excluded from query 2. For the homework's
+`receipt5.jpg` example, the independent calculation is
+`10.00 + 36.90 + 60.80 - 5.39 - 0.01 = 102.30`; query 2 is HK$107.70.
+Neither extraction nor aggregation reads the ground-truth answers. Agreement
+detects inconsistent extractions, but cannot guarantee that both readings are correct.
+
+`max_retries = 3` means at most four verification attempts per receipt, each
+using up to two model calls. Model-client retries are disabled to avoid hidden
+extra requests. API/connection errors propagate directly; the verification loop
+retries invalid JSON, invalid amounts and arithmetic mismatches. Any exhausted
+receipt stops the run without creating a new CSV. An existing CSV from an earlier
+run is not refreshed, so it must not be mistaken for a successful current result.
+The assignment requires a successful CSV-producing run for grading.
 
 ### Validation
 
-Local tests with simulated model outputs covered the seven public receipts'
-known amounts, multiple discounts, no discounts, and aggregation across receipts.
-The seven-receipt arithmetic check returned HK$1974.30 and HK$2348.20, matching
-the public ground truth. These checks validate the aggregation and output format.
+Run the local checks with:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The 13 local tests cover separate extraction calls, exact decimal
+arithmetic, discounts, positive and negative rounding, multiple receipts, retry
+recovery, the three-retry limit, invalid data and JSON, and suppression of CSV
+output when a receipt fails. One integration test uses the real prompt, JSON
+parser, runner and CSV writer with a simulated model. These checks validate control flow and arithmetic;
+they do not establish real-model receipt-reading accuracy. Run the public test
+command above to check actual image extraction.
